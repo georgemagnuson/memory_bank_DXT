@@ -8,9 +8,6 @@ mcp>=1.0.0
 # FastMCP for potential future integration  
 fastmcp>=0.1.0
 
-# Database support
-sqlite3-python>=0.1.0
-
 # Development and testing
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
@@ -20,4 +17,3 @@ structlog>=23.0.0
 
 # Type checking for defensive programming
 mypy>=1.5.0
-types-sqlite3>=1.0.0

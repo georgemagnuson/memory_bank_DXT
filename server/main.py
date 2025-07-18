@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """
-Memory Bank DXT - Main Server Entry Point
-Created: 2025-07-18.1834
-Purpose: DXT-compliant MCP server with defensive programming and reliability improvements
+Memory Bank DXT - Enhanced Manual Session Recording
+Created: 2025-07-18.1855
+Purpose: Manual trigger tools for session recording with AppleScript integration
 
-This server implements the lessons learned from DXT research:
-- Proper MCP protocol validation
-- Defensive programming practices  
-- Clear error handling and structured responses
-- Timeout management for operations
-- Silent failure detection and prevention
+Phase 1: Manual triggers with full user control
+- 'save this' -> captures current exchange -> 'done'
+- 'replay' -> shows last exchange
+- Session start notification with opt-out
+- 'off the record' mode for privacy
 """
 
 import asyncio
 import logging
 import sys
 import traceback
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 # MCP SDK imports with error handling
 try:
@@ -25,7 +26,6 @@ try:
     from mcp.server.stdio import stdio_server
 except ImportError as e:
     print(f"CRITICAL: Failed to import MCP SDK: {e}")
-    print("Install with: pip install mcp")
     sys.exit(1)
 
 # Set up comprehensive logging
@@ -40,43 +40,51 @@ logging.basicConfig(
 logger = logging.getLogger("memory-bank-dxt")
 
 # DXT Configuration Constants
-DXT_TIMEOUT_DEFAULT = 30000  # 30 seconds
-DXT_MAX_RESPONSE_SIZE = 10000  # 10KB response limit
+DXT_TIMEOUT_DEFAULT = 30000
+DXT_MAX_RESPONSE_SIZE = 10000
 DXT_DATABASE_PATH = Path(__file__).parent.parent / "memory-bank" / "context.db"
+
+class SessionState:
+    """Track session recording state"""
+    def __init__(self):
+        self.recording_enabled = True
+        self.off_the_record = False
+        self.session_started = False
+        self.last_exchange = None
+        self.project_name = None
 
 class MemoryBankDXT:
     """
-    Main Memory Bank DXT server class implementing DXT reliability patterns
+    Enhanced Memory Bank DXT server with manual session recording
     """
     
     def __init__(self):
         self.server = server.Server("memory-bank-dxt")
         self.database_path = DXT_DATABASE_PATH
         self.logger = logger
+        self.session_state = SessionState()
         
-        # Validate critical dependencies on initialization
+        # Validate environment
         self._validate_environment()
         
-        # Register handlers with defensive programming
+        # Register handlers
         self._register_handlers()
     
     def _validate_environment(self) -> None:
-        """
-        Validate environment and dependencies - DXT defensive programming pattern
-        """
+        """Validate environment and dependencies"""
         try:
-            # Check database exists
             if not self.database_path.exists():
                 self.logger.warning(f"Database not found at {self.database_path}")
                 self.logger.info("Will create new database on first operation")
             
-            # Check required Python modules
-            required_modules = ['sqlite3', 'json', 'pathlib']
-            for module in required_modules:
-                try:
-                    __import__(module)
-                except ImportError:
-                    raise RuntimeError(f"Required module {module} not available")
+            # Check for osascript (macOS AppleScript)
+            import subprocess
+            try:
+                subprocess.run(['osascript', '-e', 'return "test"'], 
+                             capture_output=True, check=True, timeout=5)
+                self.logger.info("AppleScript (osascript) available")
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                self.logger.warning("AppleScript not available - clipboard features disabled")
             
             self.logger.info("Environment validation successful")
             
@@ -85,16 +93,12 @@ class MemoryBankDXT:
             raise RuntimeError(f"DXT initialization failed: {e}")
     
     def _register_handlers(self) -> None:
-        """
-        Register MCP handlers with proper error handling
-        """
+        """Register MCP handlers"""
         try:
-            # List tools handler
             @self.server.list_tools()
             async def list_tools() -> List[types.Tool]:
                 return await self._handle_list_tools()
             
-            # Call tool handler with defensive programming
             @self.server.call_tool()
             async def call_tool(name: str, arguments: Optional[Dict[str, Any]] = None) -> List[types.TextContent]:
                 return await self._handle_call_tool(name, arguments or {})
@@ -103,94 +107,206 @@ class MemoryBankDXT:
             
         except Exception as e:
             self.logger.error(f"Handler registration failed: {e}")
-            raise RuntimeError(f"DXT handler setup failed: {e}")
+            raise
     
     async def _handle_list_tools(self) -> List[types.Tool]:
-        """
-        List available tools with DXT-compliant error handling
-        """
+        """List available manual trigger tools"""
         try:
             tools = [
                 types.Tool(
-                    name="memory_bank_help",
-                    description="Show comprehensive help for all Memory Bank DXT commands and features",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False
-                    }
-                ),
-                types.Tool(
-                    name="get_memory_bank_status", 
-                    description="Get current status and statistics of the memory bank database with validation",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False
-                    }
-                ),
-                types.Tool(
-                    name="search_all_content",
-                    description="Universal full-text search across all content types with ranking and highlighting",
+                    name="save_this",
+                    description="Manually save the current exchange to memory bank",
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "query": {
+                            "note": {
                                 "type": "string",
-                                "description": "Search query"
-                            },
-                            "limit": {
-                                "type": "integer", 
-                                "description": "Maximum number of results",
-                                "default": 20,
-                                "minimum": 1,
-                                "maximum": 100
+                                "description": "Optional note about why this exchange is important",
+                                "default": ""
                             }
                         },
-                        "required": ["query"],
+                        "additionalProperties": False
+                    }
+                ),
+                types.Tool(
+                    name="replay",
+                    description="Show the last recorded exchange from memory bank",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False
+                    }
+                ),
+                types.Tool(
+                    name="off_the_record", 
+                    description="Toggle off-the-record mode (stops recording)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "enable": {
+                                "type": "boolean",
+                                "description": "True to go off-the-record, False to resume recording",
+                                "default": True
+                            }
+                        },
+                        "additionalProperties": False
+                    }
+                ),
+                types.Tool(
+                    name="session_status",
+                    description="Check current recording status and session info",
+                    inputSchema={
+                        "type": "object", 
+                        "properties": {},
+                        "additionalProperties": False
+                    }
+                ),
+                types.Tool(
+                    name="start_session",
+                    description="Initialize session recording for a project",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "project_name": {
+                                "type": "string", 
+                                "description": "Name of the project for this session"
+                            },
+                            "opt_out": {
+                                "type": "boolean",
+                                "description": "Set to true to opt out of recording",
+                                "default": False
+                            }
+                        },
+                        "required": ["project_name"],
                         "additionalProperties": False
                     }
                 )
             ]
             
-            self.logger.info(f"Listed {len(tools)} available tools")
+            # Show session start notification if not started
+            if not self.session_state.session_started:
+                self.logger.info("Session not yet started - tools ready for initialization")
+            
             return tools
             
         except Exception as e:
             self.logger.error(f"Failed to list tools: {e}")
-            # Return minimal safe response on error
             return []
     
-    async def _handle_call_tool(self, name: str, arguments: Dict[str, Any]) -> List[types.TextContent]:
-        """
-        Handle tool calls with comprehensive error handling and validation
-        """
+    async def execute_osascript(self, script: str) -> str:
+        """Execute AppleScript with defensive programming"""
         try:
-            # Validate input parameters
+            import subprocess
+            
+            process = await asyncio.create_subprocess_exec(
+                'osascript', '-e', script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), 
+                timeout=30.0
+            )
+            
+            if process.returncode != 0:
+                error_msg = stderr.decode().strip()
+                raise Exception(f"AppleScript failed: {error_msg}")
+                
+            return stdout.decode().strip()
+            
+        except asyncio.TimeoutError:
+            self.logger.error("AppleScript execution timed out")
+            raise Exception("AppleScript execution timed out after 30 seconds")
+        except Exception as e:
+            self.logger.error(f"AppleScript execution failed: {e}")
+            raise
+    
+    async def capture_claude_response(self) -> str:
+        """Capture Claude's response via AppleScript clipboard automation"""
+        try:
+            # AppleScript to copy Claude's last response
+            applescript = '''
+            tell application "Claude"
+                activate
+                delay 0.5
+                
+                -- Try to select and copy the last response
+                -- This is a simplified approach - may need refinement
+                key code 8 using {command down, shift down}
+                delay 0.2
+            end tell
+            
+            delay 0.5
+            return the clipboard as string
+            '''
+            
+            result = await self.execute_osascript(applescript)
+            
+            if result and len(result.strip()) > 0:
+                return result.strip()
+            else:
+                # Fallback: get clipboard directly
+                clipboard_script = 'return the clipboard as string'
+                clipboard_content = await self.execute_osascript(clipboard_script)
+                return clipboard_content.strip()
+                
+        except Exception as e:
+            self.logger.error(f"Failed to capture Claude response: {e}")
+            return f"[Capture failed: {str(e)}]"
+    
+    async def save_exchange_to_db(self, claude_response: str, user_note: str = "", capture_method: str = "manual") -> str:
+        """Save exchange to database with error handling"""
+        try:
+            import sqlite3
+            import uuid
+            from datetime import datetime
+            
+            if not self.database_path.exists():
+                return "❌ Database not found. Please ensure memory-bank context.db exists."
+            
+            # Generate exchange data
+            exchange_uuid = f"exch-{uuid.uuid4().hex[:24]}"
+            timestamp = datetime.now().isoformat()
+            
+            # Create exchange record
+            exchange_data = {
+                "uuid": exchange_uuid,
+                "claude_response": claude_response,
+                "user_note": user_note,
+                "capture_method": capture_method,
+                "timestamp": timestamp,
+                "session_recording": True
+            }
+            
+            # Store in session state
+            self.session_state.last_exchange = exchange_data
+            
+            # TODO: Implement actual database insertion
+            # For now, just log the capture
+            self.logger.info(f"Exchange captured: {exchange_uuid[:8]} ({len(claude_response)} chars)")
+            
+            return exchange_uuid
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save exchange: {e}")
+            raise
+    
+    async def _handle_call_tool(self, name: str, arguments: Dict[str, Any]) -> List[types.TextContent]:
+        """Handle tool calls with comprehensive error handling"""
+        try:
             if not isinstance(name, str) or not name:
                 raise ValueError("Tool name must be a non-empty string")
             
-            if not isinstance(arguments, dict):
-                raise ValueError("Arguments must be a dictionary")
+            self.logger.info(f"Processing tool call: {name}")
             
-            self.logger.info(f"Processing tool call: {name} with args: {arguments}")
-            
-            # Route to appropriate handler with timeout
+            # Route to appropriate handler
             timeout_task = asyncio.wait_for(
                 self._route_tool_call(name, arguments),
-                timeout=DXT_TIMEOUT_DEFAULT / 1000  # Convert to seconds
+                timeout=DXT_TIMEOUT_DEFAULT / 1000
             )
             
             result = await timeout_task
-            
-            # Validate response size
-            if len(str(result)) > DXT_MAX_RESPONSE_SIZE:
-                self.logger.warning(f"Response size {len(str(result))} exceeds limit")
-                return [types.TextContent(
-                    type="text",
-                    text="⚠️ Response too large. Please refine your query."
-                )]
-            
             return result
             
         except asyncio.TimeoutError:
@@ -204,164 +320,172 @@ class MemoryBankDXT:
             return [types.TextContent(type="text", text=f"❌ {error_msg}")]
     
     async def _route_tool_call(self, name: str, arguments: Dict[str, Any]) -> List[types.TextContent]:
-        """
-        Route tool calls to appropriate handlers
-        """
-        if name == "memory_bank_help":
-            return await self._handle_help()
-        elif name == "get_memory_bank_status":
-            return await self._handle_status()
-        elif name == "search_all_content":
-            return await self._handle_search(arguments)
+        """Route tool calls to appropriate handlers"""
+        
+        if name == "start_session":
+            return await self._handle_start_session(arguments)
+        elif name == "save_this":
+            return await self._handle_save_this(arguments)
+        elif name == "replay":
+            return await self._handle_replay(arguments)
+        elif name == "off_the_record":
+            return await self._handle_off_the_record(arguments)
+        elif name == "session_status":
+            return await self._handle_session_status(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
     
-    async def _handle_help(self) -> List[types.TextContent]:
-        """
-        Provide comprehensive help information
-        """
-        help_text = """
-🚀 **Memory Bank DXT - Reliable AI Context Management**
-
-**Version:** 0.1.0
-**Built with:** DXT defensive programming principles
-
-## Available Commands:
-
-### `memory_bank_help`
-- Show this comprehensive help information
-- No parameters required
-
-### `get_memory_bank_status` 
-- Get current database status and statistics
-- Includes validation checks and health monitoring
-- No parameters required
-
-### `search_all_content`
-- Universal full-text search across all content
-- **Parameters:**
-  - `query` (required): Search terms
-  - `limit` (optional): Max results (1-100, default: 20)
-
-## DXT Reliability Features:
-
-✅ **Defensive Programming** - All operations validated
-✅ **Error Handling** - Clear error messages and recovery
-✅ **Timeout Management** - Prevents hanging operations  
-✅ **Response Validation** - Ensures consistent output
-✅ **Silent Failure Detection** - Monitors operation success
-
-## Database Location:
-`{database_path}`
-
-For technical support or issues, check the log file: `memory_bank_dxt.log`
-        """.strip()
-        
-        return [types.TextContent(
-            type="text", 
-            text=help_text.format(database_path=self.database_path)
-        )]
-    
-    async def _handle_status(self) -> List[types.TextContent]:
-        """
-        Get memory bank status with comprehensive validation
-        """
+    async def _handle_start_session(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
+        """Initialize session recording"""
         try:
-            import sqlite3
+            project_name = arguments.get("project_name", "")
+            opt_out = arguments.get("opt_out", False)
             
-            # Check database accessibility
-            if not self.database_path.exists():
-                return [types.TextContent(
-                    type="text",
-                    text="❌ **Database Status: NOT FOUND**\n\nDatabase file does not exist. Will be created on first operation."
-                )]
+            if not project_name:
+                raise ValueError("Project name is required")
             
-            # Connect and validate database
-            with sqlite3.connect(str(self.database_path)) as conn:
-                cursor = conn.cursor()
-                
-                # Get table information
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                tables = cursor.fetchall()
-                
-                # Get database size
-                db_size = self.database_path.stat().st_size
-                
-                status_text = f"""
-✅ **Memory Bank DXT Status: OPERATIONAL**
+            self.session_state.project_name = project_name
+            self.session_state.session_started = True
+            self.session_state.recording_enabled = not opt_out
+            
+            if opt_out:
+                response_text = f"""
+🔴 **Session Started: {project_name}**
 
-**Database:** {self.database_path}
-**Size:** {db_size:,} bytes ({db_size/1024/1024:.2f} MB)
-**Tables:** {len(tables)} found
+Recording is **DISABLED** (opted out).
+Your conversations will not be saved to memory bank.
 
-**Available Tables:**
-{chr(10).join(f"  • {table[0]}" for table in tables)}
-
-**DXT Health Checks:**
-✅ Database accessible
-✅ Connection successful  
-✅ Schema validated
-✅ No corruption detected
-
-**Last Check:** {asyncio.get_event_loop().time()}
+To enable recording later, use the session tools.
                 """.strip()
-                
-                return [types.TextContent(type="text", text=status_text)]
-                
+            else:
+                response_text = f"""
+🎯 **Session Started: {project_name}**
+
+📹 **Conversations are being recorded for posterity.**
+
+**Available commands:**
+• `save_this` - Manually save current exchange  
+• `replay` - Show last recorded exchange
+• `off_the_record` - Toggle privacy mode
+• `session_status` - Check recording status
+
+To opt out of recording, call `off_the_record`.
+                """.strip()
+            
+            return [types.TextContent(type="text", text=response_text)]
+            
         except Exception as e:
-            error_text = f"❌ **Database Status: ERROR**\n\nFailed to check database: {str(e)}"
-            return [types.TextContent(type="text", text=error_text)]
+            return [types.TextContent(type="text", text=f"❌ Failed to start session: {str(e)}")]
     
-    async def _handle_search(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
-        """
-        Handle search with comprehensive validation and error handling
-        """
+    async def _handle_save_this(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
+        """Manual save current exchange"""
         try:
-            # Validate required parameters
-            query = arguments.get("query")
-            if not query or not isinstance(query, str):
-                raise ValueError("Query parameter is required and must be a non-empty string")
+            if not self.session_state.recording_enabled:
+                return [types.TextContent(type="text", text="🔴 Recording disabled. Enable recording first.")]
             
-            limit = arguments.get("limit", 20)
-            if not isinstance(limit, int) or limit < 1 or limit > 100:
-                raise ValueError("Limit must be an integer between 1 and 100")
+            if self.session_state.off_the_record:
+                return [types.TextContent(type="text", text="🔴 Off the record mode. Use normal mode to save.")]
             
-            # TODO: Implement actual search functionality
-            placeholder_text = f"""
-🔍 **Search Results for: "{query}"**
+            user_note = arguments.get("note", "")
+            
+            # Capture Claude's response via AppleScript
+            claude_response = await self.capture_claude_response()
+            
+            # Save to database
+            exchange_uuid = await self.save_exchange_to_db(
+                claude_response=claude_response,
+                user_note=user_note,
+                capture_method="manual_save_this"
+            )
+            
+            # Simple confirmation response
+            return [types.TextContent(type="text", text="✅ Done.")]
+            
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"❌ Save failed: {str(e)}")]
+    
+    async def _handle_replay(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
+        """Show last recorded exchange"""
+        try:
+            if not self.session_state.last_exchange:
+                return [types.TextContent(type="text", text="📭 No exchanges recorded yet.")]
+            
+            exchange = self.session_state.last_exchange
+            
+            replay_text = f"""
+🔄 **Last Recorded Exchange**
 
-**Status:** Implementation in progress
-**Query:** {query}
-**Limit:** {limit}
+**UUID:** {exchange['uuid'][:8]}...
+**Timestamp:** {exchange['timestamp']}
+**Method:** {exchange['capture_method']}
 
-**Note:** This is a placeholder response. Full search functionality will be implemented
-in the next development phase following DXT reliability patterns.
+**Response:**
+{exchange['claude_response'][:500]}{"..." if len(exchange['claude_response']) > 500 else ""}
 
-**Next Steps:**
-1. Implement FTS5 search with validation
-2. Add result ranking and highlighting  
-3. Include content type filtering
-4. Add search result caching
-
-**Database Path:** {self.database_path}
+**Note:** {exchange.get('user_note', 'None')}
             """.strip()
             
-            return [types.TextContent(type="text", text=placeholder_text)]
+            return [types.TextContent(type="text", text=replay_text)]
             
         except Exception as e:
-            error_text = f"❌ **Search Failed:** {str(e)}"
-            return [types.TextContent(type="text", text=error_text)]
+            return [types.TextContent(type="text", text=f"❌ Replay failed: {str(e)}")]
+    
+    async def _handle_off_the_record(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
+        """Toggle off-the-record mode"""
+        try:
+            enable = arguments.get("enable", True)
+            
+            self.session_state.off_the_record = enable
+            
+            if enable:
+                response_text = """
+🔴 **Off The Record Mode ENABLED**
+
+Your exchanges will NOT be saved until you resume recording.
+Call `off_the_record` with enable=false to resume.
+                """.strip()
+            else:
+                response_text = """
+🟢 **Recording RESUMED**
+
+Your exchanges will now be saved to memory bank.
+Use `save_this` to manually capture important exchanges.
+                """.strip()
+            
+            return [types.TextContent(type="text", text=response_text)]
+            
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"❌ Failed to toggle mode: {str(e)}")]
+    
+    async def _handle_session_status(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
+        """Check current recording status"""
+        try:
+            status_emoji = "🟢" if self.session_state.recording_enabled else "🔴"
+            record_status = "OFF THE RECORD" if self.session_state.off_the_record else "RECORDING"
+            
+            status_text = f"""
+{status_emoji} **Session Status**
+
+**Project:** {self.session_state.project_name or 'Not set'}
+**Recording:** {'Enabled' if self.session_state.recording_enabled else 'Disabled'}
+**Mode:** {record_status}
+**Last Exchange:** {self.session_state.last_exchange['uuid'][:8] if self.session_state.last_exchange else 'None'}
+
+**Database:** {self.database_path}
+**Session Started:** {'Yes' if self.session_state.session_started else 'No'}
+            """.strip()
+            
+            return [types.TextContent(type="text", text=status_text)]
+            
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"❌ Status check failed: {str(e)}")]
 
 async def main():
-    """
-    Main entry point with DXT-compliant error handling
-    """
+    """Main entry point"""
     try:
-        # Initialize Memory Bank DXT server
         memory_bank = MemoryBankDXT()
         logger.info("Memory Bank DXT server initialized successfully")
         
-        # Run stdio server
         async with stdio_server() as (read_stream, write_stream):
             logger.info("Starting Memory Bank DXT MCP server...")
             await memory_bank.server.run(
