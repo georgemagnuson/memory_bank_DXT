@@ -110,7 +110,7 @@ async def test_memory_bank_dxt():
         # Test tool listing
         tools = await memory_bank._handle_list_tools()
         
-        expected_tools = ["start_session", "save_this", "replay", "off_the_record", "session_status"]
+        expected_tools = ["start_session", "save_this", "replay", "off_the_record", "on_the_record", "session_status"]
         tool_names = [tool.name for tool in tools]
         
         missing_tools = set(expected_tools) - set(tool_names)

@@ -42,7 +42,11 @@
     },
     {
       "name": "off_the_record",
-      "description": "Toggle off-the-record mode (stops recording for privacy)"
+      "description": "Stop recording exchanges (privacy mode)"
+    },
+    {
+      "name": "on_the_record", 
+      "description": "Resume recording exchanges (exit privacy mode)"
     },
     {
       "name": "session_status",

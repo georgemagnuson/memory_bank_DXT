@@ -139,16 +139,19 @@ class MemoryBankDXT:
                 ),
                 types.Tool(
                     name="off_the_record", 
-                    description="Toggle off-the-record mode (stops recording)",
+                    description="Stop recording exchanges (privacy mode)",
                     inputSchema={
                         "type": "object",
-                        "properties": {
-                            "enable": {
-                                "type": "boolean",
-                                "description": "True to go off-the-record, False to resume recording",
-                                "default": True
-                            }
-                        },
+                        "properties": {},
+                        "additionalProperties": False
+                    }
+                ),
+                types.Tool(
+                    name="on_the_record", 
+                    description="Resume recording exchanges (exit privacy mode)",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {},
                         "additionalProperties": False
                     }
                 ),
@@ -330,6 +333,8 @@ class MemoryBankDXT:
             return await self._handle_replay(arguments)
         elif name == "off_the_record":
             return await self._handle_off_the_record(arguments)
+        elif name == "on_the_record":
+            return await self._handle_on_the_record(arguments)
         elif name == "session_status":
             return await self._handle_session_status(arguments)
         else:
@@ -366,10 +371,11 @@ To enable recording later, use the session tools.
 **Available commands:**
 • `save_this` - Manually save current exchange  
 • `replay` - Show last recorded exchange
-• `off_the_record` - Toggle privacy mode
+• `off_the_record` - Stop recording (privacy mode)
+• `on_the_record` - Resume recording
 • `session_status` - Check recording status
 
-To opt out of recording, call `off_the_record`.
+To opt out of recording, use `off_the_record`.
                 """.strip()
             
             return [types.TextContent(type="text", text=response_text)]
@@ -431,31 +437,38 @@ To opt out of recording, call `off_the_record`.
             return [types.TextContent(type="text", text=f"❌ Replay failed: {str(e)}")]
     
     async def _handle_off_the_record(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
-        """Toggle off-the-record mode"""
+        """Enable off-the-record mode (stop recording)"""
         try:
-            enable = arguments.get("enable", True)
+            self.session_state.off_the_record = True
             
-            self.session_state.off_the_record = enable
-            
-            if enable:
-                response_text = """
+            response_text = """
 🔴 **Off The Record Mode ENABLED**
 
 Your exchanges will NOT be saved until you resume recording.
-Call `off_the_record` with enable=false to resume.
-                """.strip()
-            else:
-                response_text = """
-🟢 **Recording RESUMED**
-
-Your exchanges will now be saved to memory bank.
-Use `save_this` to manually capture important exchanges.
-                """.strip()
+Use `on_the_record` to resume recording.
+            """.strip()
             
             return [types.TextContent(type="text", text=response_text)]
             
         except Exception as e:
-            return [types.TextContent(type="text", text=f"❌ Failed to toggle mode: {str(e)}")]
+            return [types.TextContent(type="text", text=f"❌ Failed to enable off-the-record mode: {str(e)}")]
+    
+    async def _handle_on_the_record(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
+        """Disable off-the-record mode (resume recording)"""
+        try:
+            self.session_state.off_the_record = False
+            
+            response_text = """
+🟢 **Recording RESUMED**
+
+Your exchanges will now be saved to memory bank.
+Use `save_this` to manually capture important exchanges.
+            """.strip()
+            
+            return [types.TextContent(type="text", text=response_text)]
+            
+        except Exception as e:
+            return [types.TextContent(type="text", text=f"❌ Failed to resume recording: {str(e)}")]
     
     async def _handle_session_status(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
         """Check current recording status"""

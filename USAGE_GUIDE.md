@@ -74,7 +74,7 @@ replay
 
 ### Privacy Controls
 
-#### `off_the_record` - Privacy Mode
+#### `off_the_record` - Stop Recording
 **Usage:** Stop recording for sensitive conversations
 ```
 off_the_record
@@ -84,12 +84,19 @@ off_the_record
 > 🔴 **Off The Record Mode ENABLED**
 > 
 > Your exchanges will NOT be saved until you resume recording.
-> Call `off_the_record` with enable=false to resume.
+> Use `on_the_record` to resume recording.
 
-**Resume recording:**
+#### `on_the_record` - Resume Recording
+**Usage:** Resume recording after private discussion
 ```
-off_the_record enable=false
+on_the_record
 ```
+
+**Claude responds:**
+> 🟢 **Recording RESUMED**
+> 
+> Your exchanges will now be saved to memory bank.
+> Use `save_this` to manually capture important exchanges.
 
 #### `session_status` - Check Current State
 **Usage:** See what's being recorded
@@ -134,7 +141,7 @@ off_the_record
 [Credentials, secrets, etc.]
 
 # Resume recording
-off_the_record enable=false
+on_the_record
 
 # Continue with regular work...
 ```
@@ -148,7 +155,7 @@ start_session project_name="sensitive_project" opt_out=true
 [Private discussion]
 
 # Enable recording when ready
-off_the_record enable=false
+on_the_record
 
 # Now start saving important parts
 save_this note="Architecture decision"
