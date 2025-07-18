@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "0.1.0",
+  "name": "memory-bank-dxt",
+  "displayName": "Memory Bank DXT - Reliable AI Context Management",
+  "version": "0.1.0",
+  "description": "Reliable AI context management with defensive programming, proper MCP validation, and comprehensive session memory storage",
+  "longDescription": "Memory Bank DXT provides reliable AI context management built with defensive programming principles. This extension addresses critical reliability issues found in traditional memory bank systems by implementing proper MCP protocol validation, structured error handling, and comprehensive session memory storage. Features include auto-save validation, FTS sync monitoring, and silent failure detection to ensure your AI conversations and project context are never lost.",
+  "author": {
+    "name": "George Magnuson",
+    "email": "george@example.com"
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server/main.py",
+    "timeout": 30000
+  },
+  "capabilities": [
+    "session_management",
+    "context_storage", 
+    "full_text_search",
+    "data_validation",
+    "auto_save_monitoring"
+  ],
+  "tools": [
+    {
+      "name": "memory_bank_help",
+      "description": "Show comprehensive help for all Memory Bank DXT commands and features"
+    },
+    {
+      "name": "work_on_project",
+      "description": "Switch to working on a specific project with memory-bank integration"
+    },
+    {
+      "name": "search_all_content",
+      "description": "Universal full-text search across all content types with ranking and highlighting"
+    },
+    {
+      "name": "log_decision",
+      "description": "Log an architectural or implementation decision with validation"
+    },
+    {
+      "name": "import_markdown_files",
+      "description": "Import markdown files into the database for full-text search with error handling"
+    },
+    {
+      "name": "sync_fts_tables",
+      "description": "Synchronize FTS5 virtual tables with main content tables and validate success"
+    }
+  ]
+}
